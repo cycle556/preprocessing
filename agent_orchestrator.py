@@ -24,10 +24,11 @@ class AgentState(TypedDict):
 
 class InsuranceAgentOrchestrator:
     def __init__(self, openai_api_key: str, retrieval_engine: InsuranceRetrievalEngine,
-                 session_manager: SessionManager, model: str = "gpt-4o-mini"):
-        self.llm = ChatOpenAI(model=model, api_key=openai_api_key, temperature=0)
+                 session_manager: SessionManager, model: str = "doubao-seed-2.0-pro",
+                 base_url: str = "https://ark.cn-beijing.volces.com/api/coding/v3"):
+        self.llm = ChatOpenAI(model=model, api_key=openai_api_key, base_url=base_url, temperature=0)
         self.retrieval_engine = retrieval_engine
-        self.data_extractor = InsuranceDataExtractor(openai_api_key, model)
+        self.data_extractor = InsuranceDataExtractor(openai_api_key, model, base_url)
         self.compliance_checker = InsuranceComplianceChecker()
         self.session_manager = session_manager
         self.workflow = self._build_workflow()
@@ -88,7 +89,7 @@ class InsuranceAgentOrchestrator:
     
     def _retrieval_node(self, state: AgentState) -> AgentState:
         query = state["user_query"]
-        results = self.retrieval_engine.hybrid_search(query, top_k=5)
+        results = self.retrieval_engine.hybrid_search(query, top_k=10)
         state["retrieval_results"] = results
         return state
     
@@ -127,29 +128,45 @@ class InsuranceAgentOrchestrator:
         response_parts = ["根据保险文档查询结果：\n"]
         
         for i, field in enumerate(fields):
+            source_info = ""
             if i < len(check_results):
                 check_result = check_results[i]
-                if not check_result.overall_pass:
-                    continue
-            
-            source_info = self.compliance_checker.format_source_info(field.source_metadata)
+                source_info = self.compliance_checker.format_source_info(field.source_metadata)
+                if not check_result.source_traceable:
+                    source_info = "来源信息不完整"
+            else:
+                source_info = self.compliance_checker.format_source_info(field.source_metadata)
             
             response_parts.append(f"【{self._format_field_name(field.field_name)}】")
             response_parts.append(f"{field.value}")
             response_parts.append(f"来源：{source_info}")
             response_parts.append("")
         
-        if not any(part for part in response_parts if part.strip()):
-            response_parts = ["未查询到相关保险信息，请尝试补充产品名称或查询条件。"]
-        
-        final_response = "\n".join(response_parts)
-        state["final_response"] = final_response
+        if len(fields) == 0:
+            context_parts = []
+            for result in state.get("retrieval_results", []):
+                context_parts.append(result.content)
+            context = "\n\n".join(context_parts) if context_parts else "未找到相关文档内容"
+            
+            try:
+                prompt = SystemMessage(content="""你是一名专业的保险条款咨询助手。请根据提供的保险文档内容，准确回答用户的问题。
+要求：
+1. 仅基于提供的文档内容回答，不做任何演绎
+2. 引用原文关键语句
+3. 如果文档中没有相关信息，明确告知""")
+                response = self.llm.invoke([prompt, HumanMessage(content=f"用户问题：{query}\n\n文档内容：\n{context}")])
+                state["final_response"] = response.content
+            except Exception as e:
+                state["final_response"] = f"未查询到相关保险信息。错误：{e}"
+        else:
+            final_response = "\n".join(response_parts)
+            state["final_response"] = final_response
         
         if state.get("conversation_id"):
             self.session_manager.add_turn(
                 state["conversation_id"],
                 query,
-                final_response
+                state["final_response"]
             )
         
         return state

@@ -81,10 +81,14 @@ def create_sample_insurance_clause():
 def main():
     load_dotenv()
     
-    openai_api_key = os.getenv("OPENAI_API_KEY")
+    openai_api_key = os.getenv("VOLC_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not openai_api_key:
-        print("请在.env文件中设置OPENAI_API_KEY")
+        print("请在.env文件中设置VOLC_API_KEY或OPENAI_API_KEY")
         return
+    
+    volc_base_url = os.getenv("VOLC_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v3")
+    volc_embedding_model = os.getenv("VOLC_EMBEDDING_MODEL", "doubao-embedding-vision")
+    volc_llm_model = os.getenv("VOLC_LLM_MODEL", "doubao-seed-2.0-pro")
     
     print("=" * 60)
     print("保险文档Agentic RAG系统 - 端到端示例")
@@ -113,7 +117,12 @@ def main():
     print(f"   文档分块数: {len(result['chunks'])}")
     
     print("\n[4/6] 初始化检索引擎并建立索引...")
-    retrieval_engine = InsuranceRetrievalEngine(persist_directory="./chroma_db")
+    retrieval_engine = InsuranceRetrievalEngine(
+        persist_directory="./chroma_db",
+        api_key=openai_api_key,
+        base_url=volc_base_url,
+        embedding_model=volc_embedding_model
+    )
     retrieval_engine.create_collection("insurance_docs")
     retrieval_engine.add_documents(result['chunks'], result['tables'])
     print("   索引建立完成")
@@ -124,7 +133,8 @@ def main():
         openai_api_key=openai_api_key,
         retrieval_engine=retrieval_engine,
         session_manager=session_manager,
-        model="gpt-4o-mini"
+        model=volc_llm_model,
+        base_url=volc_base_url
     )
     print("   智能体初始化完成")
     

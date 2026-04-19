@@ -1,7 +1,8 @@
 from typing import List, Dict, Any, Tuple
 from dataclasses import dataclass
 import chromadb
-from chromadb.utils import embedding_functions
+import os
+from openai import OpenAI
 from rank_bm25 import BM25Okapi
 import jieba
 import numpy as np
@@ -16,24 +17,74 @@ class RetrievalResult:
     retrieval_type: str
 
 
+class VolcengineEmbeddingFunction(chromadb.EmbeddingFunction):
+    def __init__(self, api_key: str, base_url: str = "https://ark.cn-beijing.volces.com/api/coding/v3", model: str = "doubao-embedding-vision"):
+        self._api_key = api_key
+        self._base_url = base_url
+        self._model = model
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url=base_url
+        )
+    
+    def name(self) -> str:
+        return f"volcengine_{self._model}"
+    
+    def default_embedding_function(self):
+        return self
+    
+    def __call__(self, input: List[str]) -> List[List[float]]:
+        embeddings = []
+        batch_size = 4
+        for i in range(0, len(input), batch_size):
+            batch = input[i:i + batch_size]
+            try:
+                response = self.client.embeddings.create(
+                    model=self._model,
+                    input=batch
+                )
+                for item in response.data:
+                    embeddings.append(item.embedding)
+            except Exception as e:
+                print(f"Embedding API调用失败: {e}")
+                for _ in batch:
+                    embeddings.append([0.0] * 1024)
+        return embeddings
+
+
 class InsuranceRetrievalEngine:
     def __init__(self, persist_directory: str = "./chroma_db", 
-                 embedding_model: str = "shibing624/text2vec-base-chinese"):
+                 api_key: str = None,
+                 base_url: str = "https://ark.cn-beijing.volces.com/api/coding/v3",
+                 embedding_model: str = "doubao-embedding-vision"):
         self.persist_directory = persist_directory
         self.client = chromadb.PersistentClient(path=persist_directory)
-        self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name=embedding_model
+        
+        api_key = api_key or os.getenv("VOLC_API_KEY") or os.getenv("OPENAI_API_KEY")
+        
+        self.embedding_function = VolcengineEmbeddingFunction(
+            api_key=api_key,
+            base_url=base_url,
+            model=embedding_model
         )
         self.bm25_index = None
         self.bm25_documents = []
         self.bm25_metadatas = []
         
     def create_collection(self, collection_name: str = "insurance_docs"):
-        self.collection = self.client.get_or_create_collection(
-            name=collection_name,
-            embedding_function=self.embedding_function,
-            metadata={"description": "保险文档检索集合"}
-        )
+        try:
+            self.collection = self.client.get_or_create_collection(
+                name=collection_name,
+                embedding_function=self.embedding_function,
+                metadata={"description": "保险文档检索集合"}
+            )
+        except Exception:
+            self.client.delete_collection(name=collection_name)
+            self.collection = self.client.get_or_create_collection(
+                name=collection_name,
+                embedding_function=self.embedding_function,
+                metadata={"description": "保险文档检索集合"}
+            )
         return self.collection
     
     def add_documents(self, chunks: List[DocumentChunk], tables: List[TableData] = None):

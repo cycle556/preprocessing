@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 import PyPDF2
 import pandas as pd
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
 @dataclass
@@ -32,7 +32,7 @@ class InsuranceDocumentProcessor:
 
     def load_pdf(self, file_path: str) -> Tuple[str, Dict[str, Any]]:
         text = ""
-        metadata = {"source": file_path, "file_type": "pdf", "pages": []}
+        metadata = {"source": file_path, "file_type": "pdf"}
         
         with open(file_path, 'rb') as file:
             reader = PyPDF2.PdfReader(file)
@@ -41,10 +41,6 @@ class InsuranceDocumentProcessor:
             for page_num, page in enumerate(reader.pages):
                 page_text = page.extract_text()
                 text += page_text + "\n\n"
-                metadata["pages"].append({
-                    "page_number": page_num + 1,
-                    "content_length": len(page_text)
-                })
         
         return text, metadata
 

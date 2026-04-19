@@ -28,10 +28,12 @@ INSURANCE_FIELDS = {
 
 
 class InsuranceDataExtractor:
-    def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini"):
+    def __init__(self, openai_api_key: str, model: str = "doubao-seed-2.0-pro", 
+                 base_url: str = "https://ark.cn-beijing.volces.com/api/coding/v3"):
         self.llm = ChatOpenAI(
             model=model,
             api_key=openai_api_key,
+            base_url=base_url,
             temperature=0
         )
     
@@ -56,16 +58,39 @@ class InsuranceDataExtractor:
         return extracted_fields
     
     def _extract_value_around_keyword(self, text: str, keyword: str) -> Optional[str]:
-        pattern = rf'{keyword}[：:]\s*([^。\n！？]{1,50})'
+        pattern = rf'{keyword}[：:]\s*([^。\n！？]{{1,100}})'
         match = re.search(pattern, text)
         if match:
             return match.group(1).strip()
         
-        pattern = rf'{keyword}\s*[为是是：:]\s*([^。\n！？]{1,50})'
+        pattern = rf'{keyword}\s*[为是为：:]\s*([^。\n！？]{{1,100}})'
         match = re.search(pattern, text)
         if match:
             return match.group(1).strip()
         
+        if keyword in ["责任免除", "免责条款", "除外责任", "免责"]:
+            exclusions = self._extract_exclusions_from_text(text)
+            if exclusions:
+                return exclusions
+        
+        return None
+    
+    def _extract_exclusions_from_text(self, text: str) -> Optional[str]:
+        exclusion_items = []
+        patterns = [
+            r'[一二三四五六七八九十]+[、.]\s*([^；\n]+)',
+        ]
+        for pattern in patterns:
+            matches = re.findall(pattern, text)
+            for match in matches:
+                match = match.strip()
+                if any(kw in match for kw in ["故意", "犯罪", "毒品", "酒后驾驶", 
+                                                "艾滋病", "战争", "核爆炸", "遗传性",
+                                                "先天性", "自伤", "无证驾驶"]):
+                    exclusion_items.append(match)
+        
+        if exclusion_items:
+            return "；".join(exclusion_items[:8])
         return None
     
     def extract_by_llm(self, results: List[RetrievalResult], 
@@ -129,18 +154,24 @@ class InsuranceDataExtractor:
             
             data = json.loads(json_str)
             
+            default_metadata = results[0].metadata if results else {}
+            
             extracted = {}
             for field_name, field_data in data.items():
-                source_metadata = {}
+                source_metadata = default_metadata.copy()
+                source_text = field_data.get("source_text", "")
                 for result in results:
-                    if field_data.get("source_text", "") in result.content:
-                        source_metadata = result.metadata
+                    if source_text and source_text in result.content:
+                        source_metadata = result.metadata.copy()
+                        break
+                    if field_data.get("value", "") and field_data.get("value", "") in result.content:
+                        source_metadata = result.metadata.copy()
                         break
                 
                 extracted[field_name] = ExtractedField(
                     field_name=field_name,
                     value=field_data.get("value", ""),
-                    source_text=field_data.get("source_text", ""),
+                    source_text=source_text,
                     source_metadata=source_metadata,
                     confidence=field_data.get("confidence", 0.8)
                 )
