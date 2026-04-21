@@ -1,3 +1,7 @@
+"""
+保险文档Agentic RAG系统 - 主入口文件
+功能：演示端到端的保险条款查询系统，包括文档生成、处理、索引、检索和智能问答
+"""
 import os
 from dotenv import load_dotenv
 from document_processor import InsuranceDocumentProcessor
@@ -7,6 +11,10 @@ from agent_orchestrator import InsuranceAgentOrchestrator
 
 
 def create_sample_insurance_clause():
+    """
+    创建示例重大疾病保险条款文档
+    生成文本文件和PDF文件（如果安装了reportlab库）
+    """
     sample_text = """
 重大疾病保险条款
 
@@ -79,6 +87,15 @@ def create_sample_insurance_clause():
 
 
 def main():
+    """
+    主函数，执行完整的Agentic RAG流程：
+    1. 加载环境变量
+    2. 创建示例保险条款
+    3. 初始化文档处理器并处理文档
+    4. 初始化检索引擎并建立索引
+    5. 初始化会话管理和智能体编排器
+    6. 执行查询示例并输出结果
+    """
     load_dotenv()
     
     openai_api_key = os.getenv("VOLC_API_KEY") or os.getenv("OPENAI_API_KEY")

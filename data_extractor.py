@@ -1,3 +1,8 @@
+"""
+数据提取模块
+功能：从检索结果中提取结构化的保险字段信息，支持规则提取和LLM提取两种方式
+特点：预定义常见保险字段的关键词，支持从非结构化文本中精准提取目标信息
+"""
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 import re
@@ -8,13 +13,15 @@ from retrieval_engine import RetrievalResult
 
 @dataclass
 class ExtractedField:
-    field_name: str
-    value: str
-    source_text: str
-    source_metadata: Dict[str, Any]
-    confidence: float
+    """提取的字段数据结构"""
+    field_name: str          # 字段名称
+    value: str               # 字段值
+    source_text: str         # 原文引用片段
+    source_metadata: Dict[str, Any]  # 来源元数据
+    confidence: float        # 提取置信度
 
 
+# 保险字段与对应的中文关键词映射
 INSURANCE_FIELDS = {
     "waiting_period": ["等待期", "观察期", "等待期限"],
     "sum_insured": ["保额", "保险金额", "基本保额"],
@@ -28,8 +35,15 @@ INSURANCE_FIELDS = {
 
 
 class InsuranceDataExtractor:
-    def __init__(self, openai_api_key: str, model: str = "doubao-seed-2.0-pro", 
+    """保险数据提取器，支持规则提取和LLM提取两种方式"""
+    def __init__(self, openai_api_key: str, model: str = "doubao-seed-2.0-pro",
                  base_url: str = "https://ark.cn-beijing.volces.com/api/coding/v3"):
+        """
+        初始化数据提取器
+        :param openai_api_key: API密钥
+        :param model: LLM模型名称
+        :param base_url: API端点地址
+        """
         self.llm = ChatOpenAI(
             model=model,
             api_key=openai_api_key,
@@ -37,8 +51,14 @@ class InsuranceDataExtractor:
             temperature=0
         )
     
-    def extract_by_rules(self, results: List[RetrievalResult], 
+    def extract_by_rules(self, results: List[RetrievalResult],
                         field_name: str) -> List[ExtractedField]:
+        """
+        基于规则提取字段信息
+        :param results: 检索结果列表
+        :param field_name: 目标字段名
+        :return: 提取的字段列表
+        """
         keywords = INSURANCE_FIELDS.get(field_name, [])
         extracted_fields = []
         
@@ -58,6 +78,12 @@ class InsuranceDataExtractor:
         return extracted_fields
     
     def _extract_value_around_keyword(self, text: str, keyword: str) -> Optional[str]:
+        """
+        提取关键词附近的字段值
+        :param text: 文本内容
+        :param keyword: 关键词
+        :return: 提取到的字段值，没有则返回None
+        """
         pattern = rf'{keyword}[：:]\s*([^。\n！？]{{1,100}})'
         match = re.search(pattern, text)
         if match:
@@ -76,6 +102,11 @@ class InsuranceDataExtractor:
         return None
     
     def _extract_exclusions_from_text(self, text: str) -> Optional[str]:
+        """
+        从文本中提取责任免除条款内容
+        :param text: 文本内容
+        :return: 提取到的免责条款，没有则返回None
+        """
         exclusion_items = []
         patterns = [
             r'[一二三四五六七八九十]+[、.]\s*([^；\n]+)',
@@ -93,8 +124,15 @@ class InsuranceDataExtractor:
             return "；".join(exclusion_items[:8])
         return None
     
-    def extract_by_llm(self, results: List[RetrievalResult], 
+    def extract_by_llm(self, results: List[RetrievalResult],
                       query: str, target_fields: List[str]) -> Dict[str, ExtractedField]:
+        """
+        基于LLM提取字段信息
+        :param results: 检索结果列表
+        :param query: 用户查询
+        :param target_fields: 目标字段列表
+        :return: 提取的字段字典，key为字段名，value为ExtractedField对象
+        """
         context = self._format_retrieval_results(results)
         
         prompt = ChatPromptTemplate.from_messages([
@@ -130,6 +168,11 @@ class InsuranceDataExtractor:
         return self._parse_llm_response(response.content, results)
     
     def _format_retrieval_results(self, results: List[RetrievalResult]) -> str:
+        """
+        格式化检索结果为LLM输入格式
+        :param results: 检索结果列表
+        :return: 格式化的文本内容
+        """
         formatted = []
         for i, result in enumerate(results):
             location = f"{result.metadata.get('source', 'unknown')}"
@@ -142,8 +185,14 @@ class InsuranceDataExtractor:
         
         return "\n".join(formatted)
     
-    def _parse_llm_response(self, response_text: str, 
+    def _parse_llm_response(self, response_text: str,
                           results: List[RetrievalResult]) -> Dict[str, ExtractedField]:
+        """
+        解析LLM的返回结果，转换为ExtractedField对象
+        :param response_text: LLM返回的JSON格式文本
+        :param results: 检索结果列表，用于匹配来源元数据
+        :return: 提取的字段字典
+        """
         import json
         try:
             json_str = response_text
@@ -181,10 +230,20 @@ class InsuranceDataExtractor:
             return {}
     
     def extract_waiting_period(self, results: List[RetrievalResult]) -> Optional[ExtractedField]:
+        """
+        快捷方法：提取等待期信息
+        :param results: 检索结果列表
+        :return: 提取的等待期字段，没有则返回None
+        """
         fields = self.extract_by_rules(results, "waiting_period")
         if fields:
             return fields[0]
         return None
     
     def extract_exclusions(self, results: List[RetrievalResult]) -> List[ExtractedField]:
+        """
+        快捷方法：提取责任免除条款
+        :param results: 检索结果列表
+        :return: 提取的免责条款列表
+        """
         return self.extract_by_rules(results, "exclusions")

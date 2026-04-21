@@ -1,3 +1,8 @@
+"""
+合规检查模块
+功能：检查提取的保险字段是否符合合规要求，包括原文一致性和来源可追溯性
+特点：提供合规报告生成能力，确保输出内容的准确性和可追溯性
+"""
 from typing import List, Dict, Any, Tuple
 from dataclasses import dataclass
 import difflib
@@ -6,20 +11,30 @@ from data_extractor import ExtractedField
 
 @dataclass
 class ComplianceCheckResult:
-    field_name: str
-    original_consistency: bool
-    source_traceable: bool
-    overall_pass: bool
-    issues: List[str]
-    suggestions: List[str]
+    """合规检查结果数据结构"""
+    field_name: str               # 字段名称
+    original_consistency: bool    # 是否与原文一致
+    source_traceable: bool        # 来源是否可追溯
+    overall_pass: bool            # 整体是否通过检查
+    issues: List[str]             # 存在的问题列表
+    suggestions: List[str]        # 改进建议列表
 
 
 class InsuranceComplianceChecker:
+    """保险合规检查器，验证提取的字段是否符合合规要求"""
     def __init__(self):
+        """初始化合规检查器，设置相似度阈值为0.9"""
+        self.min_similarity_threshold = 0.9
         self.min_similarity_threshold = 0.9
     
-    def check_original_consistency(self, extracted_value: str, 
+    def check_original_consistency(self, extracted_value: str,
                                   source_text: str) -> Tuple[bool, float, str]:
+        """
+        检查提取值与原文的一致性
+        :param extracted_value: 提取的字段值
+        :param source_text: 原文片段
+        :return: (是否一致, 相似度, 检查消息)
+        """
         if not extracted_value or not source_text:
             return False, 0.0, "提取值或原文为空"
         
@@ -34,6 +49,11 @@ class InsuranceComplianceChecker:
         return False, similarity, f"提取值与原文相似度不足 (相似度: {similarity:.2f})"
     
     def check_source_traceable(self, source_metadata: Dict[str, Any]) -> Tuple[bool, List[str]]:
+        """
+        检查来源信息是否可追溯
+        :param source_metadata: 来源元数据
+        :return: (是否可追溯, 缺失的字段列表)
+        """
         required_fields = ["source"]
         missing_fields = []
         
@@ -47,6 +67,11 @@ class InsuranceComplianceChecker:
         return True, []
     
     def check_field(self, field: ExtractedField) -> ComplianceCheckResult:
+        """
+        检查单个字段的合规性
+        :param field: 提取的字段对象
+        :return: 合规检查结果
+        """
         issues = []
         suggestions = []
         
@@ -76,12 +101,22 @@ class InsuranceComplianceChecker:
         )
     
     def check_all_fields(self, fields: List[ExtractedField]) -> List[ComplianceCheckResult]:
+        """
+        批量检查所有字段的合规性
+        :param fields: 提取的字段列表
+        :return: 合规检查结果列表
+        """
         results = []
         for field in fields:
             results.append(self.check_field(field))
         return results
     
     def format_source_info(self, source_metadata: Dict[str, Any]) -> str:
+        """
+        格式化来源信息为友好的显示格式
+        :param source_metadata: 来源元数据
+        :return: 格式化的来源信息文本
+        """
         parts = []
         
         if "source" in source_metadata:
@@ -96,6 +131,11 @@ class InsuranceComplianceChecker:
         return " | ".join(parts) if parts else "来源信息未知"
     
     def generate_compliance_report(self, check_results: List[ComplianceCheckResult]) -> Dict[str, Any]:
+        """
+        生成合规检查报告
+        :param check_results: 合规检查结果列表
+        :return: 结构化的合规报告
+        """
         total_fields = len(check_results)
         passed_fields = sum(1 for r in check_results if r.overall_pass)
         failed_fields = total_fields - passed_fields

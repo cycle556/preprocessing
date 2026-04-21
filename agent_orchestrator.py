@@ -1,3 +1,8 @@
+"""
+智能体编排器模块
+功能：使用LangGraph构建多步工作流，实现意图分析、检索、数据提取、合规检查和回复生成的完整流程
+特点：模块化设计，可扩展的节点结构，支持复杂的保险查询处理
+"""
 from typing import Dict, Any, List, TypedDict, Annotated, Sequence
 from dataclasses import dataclass
 import json
@@ -12,20 +17,30 @@ from session_manager import SessionManager
 
 
 class AgentState(TypedDict):
-    user_query: str
-    conversation_id: str
-    intent: Dict[str, Any]
-    retrieval_results: List[RetrievalResult]
-    extracted_fields: List[ExtractedField]
-    compliance_results: List[ComplianceCheckResult]
-    final_response: str
-    error: str
+    """智能体工作流状态类型定义"""
+    user_query: str                  # 用户原始查询
+    conversation_id: str             # 对话ID
+    intent: Dict[str, Any]           # 意图分析结果
+    retrieval_results: List[RetrievalResult]  # 检索结果
+    extracted_fields: List[ExtractedField]    # 提取的字段数据
+    compliance_results: List[ComplianceCheckResult]  # 合规检查结果
+    final_response: str              # 最终生成的回复
+    error: str                       # 错误信息
 
 
 class InsuranceAgentOrchestrator:
+    """保险智能体编排器，基于LangGraph构建多步处理工作流"""
     def __init__(self, openai_api_key: str, retrieval_engine: InsuranceRetrievalEngine,
                  session_manager: SessionManager, model: str = "doubao-seed-2.0-pro",
                  base_url: str = "https://ark.cn-beijing.volces.com/api/coding/v3"):
+        """
+        初始化智能体编排器
+        :param openai_api_key: API密钥
+        :param retrieval_engine: 检索引擎实例
+        :param session_manager: 会话管理器实例
+        :param model: LLM模型名称
+        :param base_url: API端点地址
+        """
         self.llm = ChatOpenAI(model=model, api_key=openai_api_key, base_url=base_url, temperature=0)
         self.retrieval_engine = retrieval_engine
         self.data_extractor = InsuranceDataExtractor(openai_api_key, model, base_url)
@@ -34,6 +49,11 @@ class InsuranceAgentOrchestrator:
         self.workflow = self._build_workflow()
     
     def _build_workflow(self) -> StateGraph:
+        """
+        构建LangGraph工作流
+        工作流节点：意图分析 -> 检索 -> 数据提取 -> 合规检查 -> 回复生成
+        :return: 编译后的工作流实例
+        """
         workflow = StateGraph(AgentState)
         
         workflow.add_node("intent_analysis", self._intent_analysis_node)
@@ -52,6 +72,11 @@ class InsuranceAgentOrchestrator:
         return workflow.compile()
     
     def _intent_analysis_node(self, state: AgentState) -> AgentState:
+        """
+        意图分析节点：分析用户查询的意图类型和目标字段
+        :param state: 当前工作流状态
+        :return: 更新后的状态
+        """
         query = state["user_query"]
         
         prompt = SystemMessage(content="""你是一名专业的保险查询意图分析师。请分析用户的保险查询，输出JSON格式的意图分析结果。
@@ -88,12 +113,23 @@ class InsuranceAgentOrchestrator:
         return state
     
     def _retrieval_node(self, state: AgentState) -> AgentState:
+        """
+        检索节点：根据用户查询执行混合检索
+        :param state: 当前工作流状态
+        :return: 更新后的状态
+        """
         query = state["user_query"]
         results = self.retrieval_engine.hybrid_search(query, top_k=10)
         state["retrieval_results"] = results
         return state
     
     def _data_extraction_node(self, state: AgentState) -> AgentState:
+        """
+        数据提取节点：从检索结果中提取用户需要的保险字段信息
+        优先使用LLM提取，失败则使用规则提取
+        :param state: 当前工作流状态
+        :return: 更新后的状态
+        """
         query = state["user_query"]
         intent = state["intent"]
         results = state["retrieval_results"]
@@ -115,12 +151,23 @@ class InsuranceAgentOrchestrator:
         return state
     
     def _compliance_check_node(self, state: AgentState) -> AgentState:
+        """
+        合规检查节点：检查提取的字段是否符合合规要求（原文一致性、来源可追溯）
+        :param state: 当前工作流状态
+        :return: 更新后的状态
+        """
         fields = state["extracted_fields"]
         check_results = self.compliance_checker.check_all_fields(fields)
         state["compliance_results"] = check_results
         return state
     
     def _response_generation_node(self, state: AgentState) -> AgentState:
+        """
+        回复生成节点：根据提取的字段和检查结果生成最终回复
+        如果有提取到字段，直接结构化展示；否则使用LLM基于检索结果生成回复
+        :param state: 当前工作流状态
+        :return: 更新后的状态
+        """
         query = state["user_query"]
         fields = state["extracted_fields"]
         check_results = state["compliance_results"]
@@ -172,6 +219,11 @@ class InsuranceAgentOrchestrator:
         return state
     
     def _format_field_name(self, field_name: str) -> str:
+        """
+        将英文字段名转换为中文显示名称
+        :param field_name: 英文字段名
+        :return: 中文字段名
+        """
         name_map = {
             "waiting_period": "等待期",
             "sum_insured": "保额",
@@ -185,6 +237,12 @@ class InsuranceAgentOrchestrator:
         return name_map.get(field_name, field_name)
     
     def run(self, user_query: str, conversation_id: str = None) -> str:
+        """
+        执行完整的智能体工作流
+        :param user_query: 用户查询
+        :param conversation_id: 可选的对话ID，用于多轮对话
+        :return: 最终回复文本
+        """
         initial_state: AgentState = {
             "user_query": user_query,
             "conversation_id": conversation_id or self.session_manager.create_conversation(),
