@@ -1,0 +1,8 @@
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+/保司文件/
+/session_data/
+.env
+.env

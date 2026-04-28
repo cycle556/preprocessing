@@ -1,8 +1,3 @@
-"""
-检索引擎模块
-功能：提供混合检索能力，结合语义检索和关键词检索，支持保险文档的精准检索
-特点：使用火山引擎Embedding模型，结合BM25关键词检索，提供加权混合检索结果
-"""
 from typing import List, Dict, Any, Tuple
 from dataclasses import dataclass
 import chromadb
@@ -16,22 +11,14 @@ from document_processor import DocumentChunk, TableData
 
 @dataclass
 class RetrievalResult:
-    """检索结果数据结构"""
-    content: str          # 检索到的文本内容
-    metadata: Dict[str, Any]  # 元数据（来源、章节、条款等）
-    score: float          # 检索相关度得分
-    retrieval_type: str   # 检索类型：semantic/keyword/hybrid
+    content: str
+    metadata: Dict[str, Any]
+    score: float
+    retrieval_type: str
 
 
 class VolcengineEmbeddingFunction(chromadb.EmbeddingFunction):
-    """火山引擎Embedding函数，适配ChromaDB接口"""
     def __init__(self, api_key: str, base_url: str = "https://ark.cn-beijing.volces.com/api/coding/v3", model: str = "doubao-embedding-vision"):
-        """
-        初始化Embedding函数
-        :param api_key: API密钥
-        :param base_url: API端点地址
-        :param model: Embedding模型名称
-        """
         self._api_key = api_key
         self._base_url = base_url
         self._model = model
@@ -41,19 +28,12 @@ class VolcengineEmbeddingFunction(chromadb.EmbeddingFunction):
         )
     
     def name(self) -> str:
-        """返回Embedding函数名称"""
         return f"volcengine_{self._model}"
-
+    
     def default_embedding_function(self):
-        """返回默认Embedding函数实例"""
         return self
-
+    
     def __call__(self, input: List[str]) -> List[List[float]]:
-        """
-        调用Embedding API生成向量
-        :param input: 输入文本列表
-        :return: 向量列表
-        """
         embeddings = []
         batch_size = 4
         for i in range(0, len(input), batch_size):
@@ -73,18 +53,10 @@ class VolcengineEmbeddingFunction(chromadb.EmbeddingFunction):
 
 
 class InsuranceRetrievalEngine:
-    """保险文档检索引擎，支持语义检索、关键词检索和混合检索"""
-    def __init__(self, persist_directory: str = "./chroma_db",
+    def __init__(self, persist_directory: str = "./chroma_db", 
                  api_key: str = None,
                  base_url: str = "https://ark.cn-beijing.volces.com/api/coding/v3",
                  embedding_model: str = "doubao-embedding-vision"):
-        """
-        初始化检索引擎
-        :param persist_directory: 向量数据库持久化目录
-        :param api_key: API密钥
-        :param base_url: API端点地址
-        :param embedding_model: Embedding模型名称
-        """
         self.persist_directory = persist_directory
         self.client = chromadb.PersistentClient(path=persist_directory)
         
@@ -100,11 +72,6 @@ class InsuranceRetrievalEngine:
         self.bm25_metadatas = []
         
     def create_collection(self, collection_name: str = "insurance_docs"):
-        """
-        创建或获取向量数据库集合
-        :param collection_name: 集合名称，默认insurance_docs
-        :return: 集合对象
-        """
         try:
             self.collection = self.client.get_or_create_collection(
                 name=collection_name,
@@ -121,11 +88,6 @@ class InsuranceRetrievalEngine:
         return self.collection
     
     def add_documents(self, chunks: List[DocumentChunk], tables: List[TableData] = None):
-        """
-        添加文档到向量数据库和BM25索引
-        :param chunks: 文档分块列表
-        :param tables: 表格数据列表
-        """
         documents = []
         metadatas = []
         ids = []
@@ -151,33 +113,17 @@ class InsuranceRetrievalEngine:
             self._build_bm25_index(documents, metadatas)
     
     def _table_to_searchable_text(self, table: TableData) -> str:
-        """
-        将表格转换为可检索的文本格式
-        :param table: 表格数据对象
-        :return: 格式化的文本内容
-        """
         text_parts = [f"表格: {table.metadata.get('sheet_name', 'unknown')}"]
         text_parts.append(table.df.to_string(index=False))
         return "\n".join(text_parts)
     
     def _build_bm25_index(self, documents: List[str], metadatas: List[Dict[str, Any]]):
-        """
-        构建BM25关键词检索索引
-        :param documents: 文档列表
-        :param metadatas: 元数据列表
-        """
         tokenized_docs = [jieba.lcut(doc) for doc in documents]
         self.bm25_index = BM25Okapi(tokenized_docs)
         self.bm25_documents = documents
         self.bm25_metadatas = metadatas
     
     def semantic_search(self, query: str, top_k: int = 5) -> List[RetrievalResult]:
-        """
-        语义检索，基于向量相似度匹配
-        :param query: 用户查询
-        :param top_k: 返回结果数量，默认5
-        :return: 检索结果列表
-        """
         results = self.collection.query(
             query_texts=[query],
             n_results=top_k
@@ -195,12 +141,6 @@ class InsuranceRetrievalEngine:
         return retrieval_results
     
     def keyword_search(self, query: str, top_k: int = 5) -> List[RetrievalResult]:
-        """
-        关键词检索，基于BM25算法
-        :param query: 用户查询
-        :param top_k: 返回结果数量，默认5
-        :return: 检索结果列表
-        """
         if not self.bm25_index:
             return []
         
@@ -221,17 +161,9 @@ class InsuranceRetrievalEngine:
         
         return retrieval_results
     
-    def hybrid_search(self, query: str, top_k: int = 5,
-                     semantic_weight: float = 0.6,
+    def hybrid_search(self, query: str, top_k: int = 5, 
+                     semantic_weight: float = 0.6, 
                      keyword_weight: float = 0.4) -> List[RetrievalResult]:
-        """
-        混合检索，结合语义检索和关键词检索的结果
-        :param query: 用户查询
-        :param top_k: 返回结果数量，默认5
-        :param semantic_weight: 语义检索权重，默认0.6
-        :param keyword_weight: 关键词检索权重，默认0.4
-        :return: 加权混合后的检索结果列表
-        """
         semantic_results = self.semantic_search(query, top_k * 2)
         keyword_results = self.keyword_search(query, top_k * 2)
         
