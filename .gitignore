@@ -9,3 +9,4 @@ __pycache__/
 /chroma_db/
 /logs/
 /conversation_data/
+/index_tracking/

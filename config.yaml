@@ -42,30 +42,39 @@ embedding:
   provider: "volcengine"
   model: "doubao-embedding-vision"
   batch_size: 4
-  dimension: 1024
+  dimension: 2048
 
 llm:
   provider: "volcengine"
   model: "doubao-seed-2.0-pro"
   temperature: 0.0
-  max_tokens: 2048
+  max_tokens: 4096
 
+# ============================================================
+# 向量数据库配置
+# 切换方式：修改 provider 为 "chroma" 或 "tencent_cloud"
+#   chroma        = 本地 ChromaDB（开箱即用）
+#   tencent_cloud = 腾讯云向量数据库（需填写下方连接信息）
+# ============================================================
 vector_store:
-  provider: "chroma"
-  persist_directory: "./chroma_db"
+  provider: "tencent_cloud"
   collection_name: "insurance_knowledge"
   distance_metric: "cosine"
 
-  # 腾讯云向量数据库配置（预留）
+  # ChromaDB 本地配置
+  chroma:
+    persist_directory: "./chroma_db"
+
+  # 腾讯云向量数据库配置
   tencent_cloud:
-    enabled: false
-    host: ""
+    host: ""                              # 实例访问地址，如 http://10.0.0.1:80
     port: 80
-    key: ""
-    username: ""
-    database: "insurance_db"
-    collection: "insurance_knowledge"
-    timeout: 30
+    username: "root"                      # 用户名，默认 root
+    key: ""                               # API Key（在腾讯云控制台获取）
+    database: "insurance_db"              # 数据库名
+    timeout: 30                           # 连接超时（秒）
+    shard: 1                              # 分片数
+    replicas: 1                           # 副本数
 
 retrieval:
   top_k: 10

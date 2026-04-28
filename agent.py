@@ -51,6 +51,15 @@ class InsuranceRAGAgent:
         """
         self.config = config
 
+        # 从环境变量覆盖腾讯云配置（优先级: 环境变量 > config.yaml）
+        if vs_cfg := config.get("vector_store", {}):
+            tc_cfg = vs_cfg.get("tencent_cloud", {})
+            tc_cfg["host"] = self._get_env("TENCENT_VDB_HOST", tc_cfg.get("host", ""))
+            tc_cfg["key"] = self._get_env("TENCENT_VDB_KEY", tc_cfg.get("key", ""))
+            tc_cfg["username"] = self._get_env("TENCENT_VDB_USERNAME", tc_cfg.get("username", "root"))
+            tc_cfg["database"] = self._get_env("TENCENT_VDB_DATABASE", tc_cfg.get("database", "insurance_db"))
+            vs_cfg["tencent_cloud"] = tc_cfg
+
         embedding_cfg = config.get("embedding", {})
         llm_cfg = config.get("llm", {})
         retrieval_cfg = config.get("retrieval", {})
@@ -295,6 +304,9 @@ class InsuranceRAGAgent:
         logger.info("开始加载文档并建立索引...")
         logger.info("=" * 60)
 
+        vs_provider = self.config.get("vector_store", {}).get("provider", "chroma")
+        logger.info(f"向量库类型: {vs_provider}")
+
         if force_reload:
             stats = self.vector_store.get_collection_stats()
             logger.info(f"强制重建索引，当前文档数: {stats.get('document_count', 0)}")
@@ -335,10 +347,11 @@ class InsuranceRAGAgent:
                 logger.error("向量索引写入失败")
                 return 0
 
-        self.retriever.build_bm25_index(vector_docs if vector_docs else [
+        all_docs = vector_docs if vector_docs else [
             VectorDocument(id=c.id, content=c.content, metadata=c.metadata)
             for c in chunks
-        ])
+        ]
+        self.retriever.build_bm25_index(all_docs)
 
         stats = self.vector_store.get_collection_stats()
         logger.info(f"索引建立完成: 新增 {len(vector_docs)} 块, "
@@ -346,15 +359,62 @@ class InsuranceRAGAgent:
         return len(vector_docs)
 
     def _get_existing_chunk_ids(self) -> set:
-        """获取已索引的文档块 ID 集合"""
-        try:
-            if hasattr(self.vector_store, '_collection') and self.vector_store._collection:
-                result = self.vector_store._collection.get()
-                if result and result.get("ids"):
-                    return set(result["ids"])
-        except Exception:
-            pass
+        """
+        获取已索引的文档块 ID 集合
+        支持 ChromaDB（从本地集合查询）和腾讯云（从追踪文件恢复）
+        """
+        vs_provider = self.config.get("vector_store", {}).get("provider", "chroma")
+
+        if vs_provider == "chroma":
+            try:
+                if hasattr(self.vector_store, '_collection') and self.vector_store._collection:
+                    result = self.vector_store._collection.get()
+                    if result and result.get("ids"):
+                        return set(result["ids"])
+            except Exception:
+                pass
+
+        if vs_provider == "tencent_cloud":
+            return self._load_cloud_tracking_ids()
+
         return set()
+
+    def _load_cloud_tracking_ids(self) -> set:
+        """从本地追踪文件恢复已索引的 ID 集合（腾讯云模式下使用）"""
+        import json
+        from pathlib import Path
+
+        tracking_dir = Path("./index_tracking")
+        tracking_dir.mkdir(exist_ok=True)
+        tracking_file = tracking_dir / "cloud_indexed_ids.json"
+
+        if tracking_file.exists():
+            try:
+                with open(tracking_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                ids = set(data.get("ids", []))
+                logger.debug(f"从追踪文件恢复 {len(ids)} 个已索引 ID")
+                return ids
+            except Exception as e:
+                logger.warning(f"追踪文件读取失败: {e}")
+
+        return set()
+
+    def _save_cloud_tracking_ids(self, ids: set):
+        """保存已索引的 ID 集合到本地追踪文件"""
+        import json
+        from pathlib import Path
+
+        tracking_dir = Path("./index_tracking")
+        tracking_dir.mkdir(exist_ok=True)
+        tracking_file = tracking_dir / "cloud_indexed_ids.json"
+
+        try:
+            with open(tracking_file, "w", encoding="utf-8") as f:
+                json.dump({"ids": sorted(ids), "updated_at": ""}, f, ensure_ascii=False)
+            logger.debug(f"追踪文件已更新: {len(ids)} 个 ID")
+        except Exception as e:
+            logger.warning(f"追踪文件写入失败: {e}")
 
     def get_stats(self) -> Dict[str, Any]:
         """获取系统统计信息"""
