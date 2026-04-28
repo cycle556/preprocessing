@@ -1,0 +1,89 @@
+# ============================================================
+# 保险文档 Agentic RAG 系统 - 全局配置文件
+# ============================================================
+
+system:
+  name: "保险文档Agentic RAG系统"
+  version: "2.0.0"
+  log_level: "INFO"
+  log_dir: "./logs"
+  log_max_bytes: 10485760
+  log_backup_count: 5
+
+document:
+  source_dir: "./保司文件"
+  supported_formats:
+    - ".pdf"
+    - ".txt"
+  max_file_size_mb: 50
+  encoding: "utf-8"
+
+chunking:
+  strategy: "semantic_recursive"
+  chunk_size: 800
+  chunk_overlap: 100
+  min_chunk_size: 50
+  separators:
+    - "\n\n\n"
+    - "\n\n"
+    - "\n"
+    - "。"
+    - "！"
+    - "？"
+    - " "
+    - ""
+  semantic_headings:
+    - "章"
+    - "条"
+    - "节"
+    - "款"
+
+embedding:
+  provider: "volcengine"
+  model: "doubao-embedding-vision"
+  batch_size: 4
+  dimension: 1024
+
+llm:
+  provider: "volcengine"
+  model: "doubao-seed-2.0-pro"
+  temperature: 0.0
+  max_tokens: 2048
+
+vector_store:
+  provider: "chroma"
+  persist_directory: "./chroma_db"
+  collection_name: "insurance_knowledge"
+  distance_metric: "cosine"
+
+  # 腾讯云向量数据库配置（预留）
+  tencent_cloud:
+    enabled: false
+    host: ""
+    port: 80
+    key: ""
+    username: ""
+    database: "insurance_db"
+    collection: "insurance_knowledge"
+    timeout: 30
+
+retrieval:
+  top_k: 10
+  semantic_weight: 0.6
+  keyword_weight: 0.4
+  similarity_threshold: 0.1
+  use_rerank: true
+  rerank_top_k: 5
+  expand_query: true
+  expansion_terms: 3
+
+conversation:
+  max_history_turns: 10
+  storage_dir: "./conversation_data"
+  context_window_size: 5
+
+answer_generation:
+  max_context_chunks: 5
+  require_citation: true
+  citation_format: "【来源：{filename} 第{page}页 {chapter}】"
+  fallback_message: "抱歉，在现有保险文档中未找到相关信息。请尝试调整查询条件或联系客服获取更多帮助。"
