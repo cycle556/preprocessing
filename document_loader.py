@@ -47,6 +47,22 @@ class DocumentLoader:
     遍历指定目录，批量加载 PDF/TXT 文件，提取文本和元数据
     """
 
+    # 已知的保险公司名称列表
+    INSURANCE_COMPANIES = [
+        "友邦", "AIA", "保诚", "Prudential", "宏利", "Manulife",
+        "中国人寿", "中銀人寿", "中银人寿", "万通", "周大福",
+        "太平", "太平洋保險", "太平洋保险", "安盛", "AXA",
+        "安达", "Chubb", "富卫", "FWD", "忠意", "Generali",
+        "永明", "Sun Life", "立橋", "Livi",
+    ]
+
+    # 繁→简映射，确保存储和查询使用统一的简体中文
+    _COMPANY_NAME_NORMALIZE = {
+        "中銀人寿": "中银人寿",
+        "太平洋保險": "太平洋保险",
+        "立橋": "立桥",
+    }
+
     def __init__(self, source_dir: str, supported_formats: List[str] = None,
                  max_file_size_mb: float = 50, encoding: str = "utf-8"):
         """
@@ -57,7 +73,7 @@ class DocumentLoader:
             encoding: 文本文件编码
         """
         self.source_dir = Path(source_dir)
-        self.supported_formats = supported_formats or [".pdf", ".txt"]
+        self.supported_formats = supported_formats or [".pdf", ".txt", ".md"]
         self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
         self.encoding = encoding
 
@@ -144,6 +160,8 @@ class DocumentLoader:
                 return self._load_pdf(file_path)
             elif suffix == ".txt":
                 return self._load_txt(file_path)
+            elif suffix == ".md":
+                return self._load_txt(file_path)  # md文件使用txt加载方式
             else:
                 logger.warning(f"不支持的文件格式: {suffix}")
                 return None
@@ -196,6 +214,7 @@ class DocumentLoader:
                 full_text = "\n\n".join(full_text_parts)
 
             file_hash = self._compute_file_hash(file_path)
+            company_name = self._extract_company_name(file_path)
 
             metadata = {
                 "source": str(file_path),
@@ -205,6 +224,7 @@ class DocumentLoader:
                 "total_pages": total_pages,
                 "extracted_pages": len(pages_content),
                 "file_hash": file_hash,
+                "company_name": company_name,
             }
 
             doc = LoadedDocument(
@@ -219,7 +239,7 @@ class DocumentLoader:
             doc._pages = pages_content  # type: ignore
 
             logger.info(f"PDF 加载成功: {file_path.name}, {total_pages} 页, "
-                         f"{len(full_text)} 字符")
+                         f"{len(full_text)} 字符, 公司: {company_name}")
             return doc
 
         except PyPDF2.errors.PdfReadError as e:
@@ -249,7 +269,8 @@ class DocumentLoader:
                 logger.warning(f"TXT 文件内容为空: {file_path}")
                 return None
 
-            file_hash = self._compute_file_hash(file_path)
+            file_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
+            company_name = self._extract_company_name(file_path)
 
             line_count = text.count('\n') + 1
             estimated_pages = max(1, line_count // 40)
@@ -262,6 +283,7 @@ class DocumentLoader:
                 "total_pages": estimated_pages,
                 "extracted_pages": 1,
                 "file_hash": file_hash,
+                "company_name": company_name,
             }
 
             doc = LoadedDocument(
@@ -276,7 +298,7 @@ class DocumentLoader:
             doc._pages = [PageContent(page_number=1, text=text,  # type: ignore
                                        metadata={"file_name": file_path.name})]
 
-            logger.info(f"TXT 加载成功: {file_path.name}, {len(text)} 字符")
+            logger.info(f"TXT 加载成功: {file_path.name}, {len(text)} 字符, 公司: {company_name}")
             return doc
 
         except UnicodeDecodeError:
@@ -284,7 +306,8 @@ class DocumentLoader:
             try:
                 with open(file_path, 'r', encoding='gbk') as f:
                     text = f.read()
-                file_hash = self._compute_file_hash(file_path)
+                file_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
+                company_name = self._extract_company_name(file_path)
                 metadata = {
                     "source": str(file_path),
                     "file_name": file_path.name,
@@ -293,6 +316,7 @@ class DocumentLoader:
                     "total_pages": 1,
                     "extracted_pages": 1,
                     "file_hash": file_hash,
+                    "company_name": company_name,
                 }
                 return LoadedDocument(
                     file_path=str(file_path),
@@ -335,6 +359,25 @@ class DocumentLoader:
             for chunk in iter(lambda: f.read(8192), b''):
                 hasher.update(chunk)
         return hasher.hexdigest()
+
+    def _extract_company_name(self, file_path: Path) -> str:
+        """
+        从文件路径中提取保险公司名称
+
+        Args:
+            file_path: 文件路径
+
+        Returns:
+            保险公司名称，如果未识别则返回"未知公司"
+        """
+        path_str = str(file_path)
+
+        # 检查路径中是否包含已知的保险公司名称
+        for company in self.INSURANCE_COMPANIES:
+            if company in path_str:
+                return self._COMPANY_NAME_NORMALIZE.get(company, company)
+
+        return "未知公司"
 
     @staticmethod
     def detect_insurance_document_type(text: str) -> str:

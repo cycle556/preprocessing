@@ -5,6 +5,7 @@
 """
 import os
 import hashlib
+import time
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
@@ -70,6 +71,11 @@ class BaseVectorStore(ABC):
         pass
 
     @abstractmethod
+    def delete_collection(self, collection_name: str):
+        """删除整个集合"""
+        pass
+
+    @abstractmethod
     def delete_by_filter(self, filter_metadata: Dict[str, Any]) -> int:
         """按元数据过滤删除"""
         pass
@@ -95,7 +101,7 @@ class EmbeddingProvider:
         self.base_url = base_url
         self.model = model
         self.batch_size = batch_size
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.client = OpenAI(api_key=api_key, base_url=base_url, timeout=60.0)
         self._known_dimension = None
         self._max_retries = 3
         self._retry_delay = 3.0
@@ -116,7 +122,6 @@ class EmbeddingProvider:
             return []
 
         embeddings = []
-        import time
 
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i:i + self.batch_size]
@@ -134,7 +139,6 @@ class EmbeddingProvider:
 
     def _embed_batch_with_retry(self, batch: List[str]) -> List[List[float]]:
         """带重试的批次嵌入"""
-        import time
         last_error = None
 
         for attempt in range(self._max_retries):
@@ -166,13 +170,14 @@ class EmbeddingProvider:
                     break
 
         logger.error(f"Embedding API 调用最终失败: {last_error}")
-        dim = self._known_dimension or 1024
-        return [[0.0] * dim for _ in batch]
+        raise RuntimeError(
+            f"Embedding API 调用失败（已重试 {self._max_retries} 次）: {last_error}"
+        ) from last_error
 
     def embed_single(self, text: str) -> List[float]:
         """生成单条文本向量"""
         results = self.embed([text])
-        return results[0] if results else [0.0] * 1024
+        return results[0] if results else [0.0] * (self._known_dimension or 2048)
 
 
 class ChromaVectorStore(BaseVectorStore):
@@ -316,10 +321,24 @@ class ChromaVectorStore(BaseVectorStore):
             logger.error(f"ChromaDB 搜索失败: {e}")
             return []
 
+    def delete_collection(self, collection_name: str):
+        """删除整个集合"""
+        self._ensure_client()
+        try:
+            self._client.delete_collection(name=collection_name)
+            self._collection = None
+            logger.info(f"ChromaDB 集合已删除: {collection_name}")
+        except Exception as e:
+            logger.warning(f"ChromaDB 删除集合失败（可能不存在）: {e}")
+
     def delete_by_filter(self, filter_metadata: Dict[str, Any]) -> int:
         """按元数据过滤删除文档"""
         self._ensure_client()
         if self._collection is None:
+            return 0
+
+        if not filter_metadata:
+            logger.warning("delete_by_filter: 空过滤条件，跳过。请使用 delete_collection 清空集合")
             return 0
 
         try:
@@ -491,6 +510,10 @@ class TencentCloudVectorStore(BaseVectorStore):
                 name="section", field_type=FieldType.String,
                 index_type=IndexType.FILTER
             ))
+            index.add(FilterIndex(
+                name="company_name", field_type=FieldType.String,
+                index_type=IndexType.FILTER
+            ))
             index.add(VectorIndex(
                 name="vector", field_type=FieldType.Vector,
                 index_type=IndexType.HNSW,
@@ -545,6 +568,7 @@ class TencentCloudVectorStore(BaseVectorStore):
                         chunk_index=doc.metadata.get("chunk_index", 0),
                         chapter=doc.metadata.get("chapter", ""),
                         section=doc.metadata.get("section", ""),
+                        company_name=doc.metadata.get("company_name", ""),
                     ))
 
                 result = self._collection.upsert(documents=tc_docs)
@@ -584,7 +608,8 @@ class TencentCloudVectorStore(BaseVectorStore):
                 filter=filter_expr,
                 output_fields=[
                     "content", "source", "file_name",
-                    "page", "chapter", "section", "chunk_index"
+                    "page", "chapter", "section", "chunk_index",
+                    "company_name"
                 ],
                 params=SearchParams(ef=200),
             )
@@ -602,6 +627,7 @@ class TencentCloudVectorStore(BaseVectorStore):
                             "chapter": item.get("chapter", ""),
                             "section": item.get("section", ""),
                             "chunk_index": item.get("chunk_index", 0),
+                            "company_name": item.get("company_name", ""),
                         },
                         score=item.get("score", 0.0),
                         retrieval_type="semantic"
@@ -612,6 +638,16 @@ class TencentCloudVectorStore(BaseVectorStore):
         except Exception as e:
             logger.error(f"腾讯云向量搜索失败: {e}")
             return []
+
+    def delete_collection(self, collection_name: str):
+        """删除整个集合"""
+        self._ensure_client()
+        try:
+            self._db.drop_collection(collection_name)
+            self._collection = None
+            logger.info(f"腾讯云向量集合已删除: {collection_name}")
+        except Exception as e:
+            logger.warning(f"腾讯云向量删除集合失败: {e}")
 
     def delete_by_filter(self, filter_metadata: Dict[str, Any]) -> int:
         """按元数据过滤删除文档"""
@@ -706,7 +742,7 @@ def create_vector_store(config: Dict[str, Any], embedding_provider: EmbeddingPro
                 "vector_store.tencent_cloud.host 中填写实例地址"
             )
 
-        tc_config["dimension"] = config.get("embedding", {}).get("dimension", 1024)
+        tc_config["dimension"] = config.get("embedding", {}).get("dimension", 2048)
         logger.info(f"创建 TencentCloudVectorStore (云端): {host}")
         return TencentCloudVectorStore(tc_config, embedding_provider)
 

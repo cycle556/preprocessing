@@ -4,7 +4,6 @@
      对模糊问题自动扩写、改写、关键词提取，提升检索精度。
 """
 import re
-import json
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 
@@ -65,6 +64,22 @@ class QueryEnhancer:
         "insurance_type": r"(重疾|医疗|意外|寿险|年金|车险|财产)",
         "time_period": r"(\d+[天日月年]|[一二三]十年|[一二三]个月)",
         "money_amount": r"(\d+[万亿千百]?\s*(?:元|块))",
+    }
+
+    # 保险公司名称列表（用于查询中的公司名识别）
+    INSURANCE_COMPANIES = [
+        "友邦", "AIA", "保诚", "Prudential", "宏利", "Manulife",
+        "中国人寿", "中銀人寿", "中银人寿", "万通", "周大福",
+        "太平", "太平洋保險", "太平洋保险", "安盛", "AXA",
+        "安达", "Chubb", "富卫", "FWD", "忠意", "Generali",
+        "永明", "Sun Life", "立橋", "Livi",
+    ]
+
+    # 繁→简映射，确保与 document_loader 中存储的名称一致
+    _COMPANY_NAME_NORMALIZE = {
+        "中銀人寿": "中银人寿",
+        "太平洋保險": "太平洋保险",
+        "立橋": "立桥",
     }
 
     def __init__(self, expand_query: bool = True, expansion_terms: int = 3):
@@ -158,7 +173,19 @@ class QueryEnhancer:
     def _extract_entities(self, query: str) -> Dict[str, str]:
         """提取保险相关实体"""
         entities = {}
+
+        # 先识别公司名（优先级最高）
+        for company in self.INSURANCE_COMPANIES:
+            if company in query:
+                entities["company_name"] = self._COMPANY_NAME_NORMALIZE.get(company, company)
+                break
+
+        # 再识别其他实体
         for entity_name, pattern in self.INSURANCE_ENTITIES.items():
+            if entity_name == "company_name":
+                continue  # 已特殊处理
+            if pattern is None:
+                continue
             matches = re.findall(pattern, query)
             if matches:
                 entities[entity_name] = matches[0] if isinstance(matches[0], str) else matches[0][0]

@@ -11,10 +11,11 @@ system:
   log_backup_count: 5
 
 document:
-  source_dir: "./保司文件"
+  source_dir: "./保司文件2.0"
   supported_formats:
     - ".pdf"
     - ".txt"
+    - ".md"
   max_file_size_mb: 50
   encoding: "utf-8"
 
@@ -52,29 +53,15 @@ llm:
 
 # ============================================================
 # 向量数据库配置
-# 切换方式：修改 provider 为 "chroma" 或 "tencent_cloud"
-#   chroma        = 本地 ChromaDB（开箱即用）
-#   tencent_cloud = 腾讯云向量数据库（需填写下方连接信息）
 # ============================================================
 vector_store:
-  provider: "tencent_cloud"
+  provider: "chroma"
   collection_name: "insurance_knowledge"
   distance_metric: "cosine"
 
   # ChromaDB 本地配置
   chroma:
     persist_directory: "./chroma_db"
-
-  # 腾讯云向量数据库配置
-  tencent_cloud:
-    host: ""                              # 实例访问地址，如 http://10.0.0.1:80
-    port: 80
-    username: "root"                      # 用户名，默认 root
-    key: ""                               # API Key（在腾讯云控制台获取）
-    database: "insurance_db"              # 数据库名
-    timeout: 30                           # 连接超时（秒）
-    shard: 1                              # 分片数
-    replicas: 1                           # 副本数
 
 retrieval:
   top_k: 10

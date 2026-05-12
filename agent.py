@@ -119,8 +119,8 @@ class InsuranceRAGAgent:
         )
 
         self.document_loader = DocumentLoader(
-            source_dir=doc_cfg.get("source_dir", "./保司文件"),
-            supported_formats=doc_cfg.get("supported_formats", [".pdf", ".txt"]),
+            source_dir=doc_cfg.get("source_dir", "./保司文件2.0"),
+            supported_formats=doc_cfg.get("supported_formats", [".pdf", ".txt", ".md"]),
             max_file_size_mb=doc_cfg.get("max_file_size_mb", 50),
             encoding=doc_cfg.get("encoding", "utf-8"),
         )
@@ -233,11 +233,14 @@ class InsuranceRAGAgent:
             state["final_response"] = generated.answer
 
             if conv_id:
-                self.conversation_manager.add_turn(
-                    conv_id, query, generated.answer,
-                    citations=generated.citations,
-                    intent=state.get("enhanced_query", {}).get("intent_type", ""),
-                )
+                try:
+                    self.conversation_manager.add_turn(
+                        conv_id, query, generated.answer,
+                        citations=generated.citations,
+                        intent=state.get("enhanced_query", {}).get("intent_type", ""),
+                    )
+                except Exception as e:
+                    logger.error(f"会话持久化失败（不影响响应）: {e}")
         except Exception as e:
             logger.error(f"答案生成失败: {e}")
             state["error"] = str(e)
@@ -310,7 +313,10 @@ class InsuranceRAGAgent:
         if force_reload:
             stats = self.vector_store.get_collection_stats()
             logger.info(f"强制重建索引，当前文档数: {stats.get('document_count', 0)}")
-            self.vector_store.delete_by_filter({})
+            # 删除整个集合并重建，避免 delete_by_filter({}) 的空字典问题
+            collection_name = self.config.get("vector_store", {}).get("collection_name", "insurance_knowledge")
+            self.vector_store.delete_collection(collection_name)
+            self.vector_store.create_collection(collection_name)
 
         documents = self.document_loader.load_all()
         if not documents:
