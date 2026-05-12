@@ -4,7 +4,6 @@
      对模糊问题自动扩写、改写、关键词提取，提升检索精度。
 """
 import re
-import json
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 
@@ -75,6 +74,13 @@ class QueryEnhancer:
         "安达", "Chubb", "富卫", "FWD", "忠意", "Generali",
         "永明", "Sun Life", "立橋", "Livi",
     ]
+
+    # 繁→简映射，确保与 document_loader 中存储的名称一致
+    _COMPANY_NAME_NORMALIZE = {
+        "中銀人寿": "中银人寿",
+        "太平洋保險": "太平洋保险",
+        "立橋": "立桥",
+    }
 
     def __init__(self, expand_query: bool = True, expansion_terms: int = 3):
         """
@@ -171,7 +177,7 @@ class QueryEnhancer:
         # 先识别公司名（优先级最高）
         for company in self.INSURANCE_COMPANIES:
             if company in query:
-                entities["company_name"] = company
+                entities["company_name"] = self._COMPANY_NAME_NORMALIZE.get(company, company)
                 break
 
         # 再识别其他实体

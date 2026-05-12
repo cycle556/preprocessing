@@ -5,6 +5,7 @@
 """
 import os
 import hashlib
+import time
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
@@ -100,7 +101,7 @@ class EmbeddingProvider:
         self.base_url = base_url
         self.model = model
         self.batch_size = batch_size
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.client = OpenAI(api_key=api_key, base_url=base_url, timeout=60.0)
         self._known_dimension = None
         self._max_retries = 3
         self._retry_delay = 3.0
@@ -121,7 +122,6 @@ class EmbeddingProvider:
             return []
 
         embeddings = []
-        import time
 
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i:i + self.batch_size]
@@ -139,7 +139,6 @@ class EmbeddingProvider:
 
     def _embed_batch_with_retry(self, batch: List[str]) -> List[List[float]]:
         """带重试的批次嵌入"""
-        import time
         last_error = None
 
         for attempt in range(self._max_retries):
@@ -171,13 +170,14 @@ class EmbeddingProvider:
                     break
 
         logger.error(f"Embedding API 调用最终失败: {last_error}")
-        dim = self._known_dimension or 1024
-        return [[0.0] * dim for _ in batch]
+        raise RuntimeError(
+            f"Embedding API 调用失败（已重试 {self._max_retries} 次）: {last_error}"
+        ) from last_error
 
     def embed_single(self, text: str) -> List[float]:
         """生成单条文本向量"""
         results = self.embed([text])
-        return results[0] if results else [0.0] * 1024
+        return results[0] if results else [0.0] * (self._known_dimension or 2048)
 
 
 class ChromaVectorStore(BaseVectorStore):
@@ -742,7 +742,7 @@ def create_vector_store(config: Dict[str, Any], embedding_provider: EmbeddingPro
                 "vector_store.tencent_cloud.host 中填写实例地址"
             )
 
-        tc_config["dimension"] = config.get("embedding", {}).get("dimension", 1024)
+        tc_config["dimension"] = config.get("embedding", {}).get("dimension", 2048)
         logger.info(f"创建 TencentCloudVectorStore (云端): {host}")
         return TencentCloudVectorStore(tc_config, embedding_provider)
 

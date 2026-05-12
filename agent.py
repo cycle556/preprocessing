@@ -119,8 +119,8 @@ class InsuranceRAGAgent:
         )
 
         self.document_loader = DocumentLoader(
-            source_dir=doc_cfg.get("source_dir", "./保司文件"),
-            supported_formats=doc_cfg.get("supported_formats", [".pdf", ".txt"]),
+            source_dir=doc_cfg.get("source_dir", "./保司文件2.0"),
+            supported_formats=doc_cfg.get("supported_formats", [".pdf", ".txt", ".md"]),
             max_file_size_mb=doc_cfg.get("max_file_size_mb", 50),
             encoding=doc_cfg.get("encoding", "utf-8"),
         )
@@ -233,11 +233,14 @@ class InsuranceRAGAgent:
             state["final_response"] = generated.answer
 
             if conv_id:
-                self.conversation_manager.add_turn(
-                    conv_id, query, generated.answer,
-                    citations=generated.citations,
-                    intent=state.get("enhanced_query", {}).get("intent_type", ""),
-                )
+                try:
+                    self.conversation_manager.add_turn(
+                        conv_id, query, generated.answer,
+                        citations=generated.citations,
+                        intent=state.get("enhanced_query", {}).get("intent_type", ""),
+                    )
+                except Exception as e:
+                    logger.error(f"会话持久化失败（不影响响应）: {e}")
         except Exception as e:
             logger.error(f"答案生成失败: {e}")
             state["error"] = str(e)

@@ -3,11 +3,12 @@
 功能：基于召回片段生成精准答案，无幻觉、可溯源、格式友好，
      必须支持原文引用+来源标注（文件名+页码+段落）。
 """
+import re
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 from vector_store import SearchResult
 from logger import get_logger
@@ -114,8 +115,7 @@ class AnswerGenerator:
         if conversation_history:
             for turn in conversation_history[-3:]:
                 messages.append(HumanMessage(content=turn.get("question", "")))
-                messages.append(SystemMessage(content=turn.get("answer", "")))
-
+                messages.append(AIMessage(content=turn.get("answer", "")))
         user_prompt = f"""用户问题：{query}
 
 请基于以下保险文档内容回答问题。注意：文档可能使用繁体中文，与问题的简体中文表述不同，但内容相关即可。
@@ -167,8 +167,6 @@ class AnswerGenerator:
             if company:
                 display_path = f"{company}/{file_name}"
             elif source:
-                # 尝试从完整路径中提取 保司文件2.0 之后的部分
-                import re
                 m = re.search(r'保司文件2\.0[/\\](.+?)(?:[/\\][^/\\]+\.md)?$', source)
                 if m:
                     display_path = m.group(1).replace('\\', '/')

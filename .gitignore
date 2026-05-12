@@ -5,7 +5,6 @@ __pycache__/
 /保司文件/
 /session_data/
 .env
-.env
 /chroma_db/
 /logs/
 /conversation_data/

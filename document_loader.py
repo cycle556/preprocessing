@@ -56,6 +56,13 @@ class DocumentLoader:
         "永明", "Sun Life", "立橋", "Livi",
     ]
 
+    # 繁→简映射，确保存储和查询使用统一的简体中文
+    _COMPANY_NAME_NORMALIZE = {
+        "中銀人寿": "中银人寿",
+        "太平洋保險": "太平洋保险",
+        "立橋": "立桥",
+    }
+
     def __init__(self, source_dir: str, supported_formats: List[str] = None,
                  max_file_size_mb: float = 50, encoding: str = "utf-8"):
         """
@@ -262,7 +269,7 @@ class DocumentLoader:
                 logger.warning(f"TXT 文件内容为空: {file_path}")
                 return None
 
-            file_hash = self._compute_file_hash(file_path)
+            file_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
             company_name = self._extract_company_name(file_path)
 
             line_count = text.count('\n') + 1
@@ -299,7 +306,7 @@ class DocumentLoader:
             try:
                 with open(file_path, 'r', encoding='gbk') as f:
                     text = f.read()
-                file_hash = self._compute_file_hash(file_path)
+                file_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
                 company_name = self._extract_company_name(file_path)
                 metadata = {
                     "source": str(file_path),
@@ -368,14 +375,7 @@ class DocumentLoader:
         # 检查路径中是否包含已知的保险公司名称
         for company in self.INSURANCE_COMPANIES:
             if company in path_str:
-                return company
-
-        # 尝试从父目录名提取（保司文件2.0/友邦/xxx.pdf）
-        parts = file_path.parts
-        for part in parts:
-            for company in self.INSURANCE_COMPANIES:
-                if company in part:
-                    return company
+                return self._COMPANY_NAME_NORMALIZE.get(company, company)
 
         return "未知公司"
 

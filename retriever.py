@@ -5,7 +5,6 @@
 """
 import re
 from typing import List, Dict, Any, Optional
-from collections import defaultdict
 
 import jieba
 import numpy as np
