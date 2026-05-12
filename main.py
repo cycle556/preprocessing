@@ -23,7 +23,7 @@ def load_config(config_path: str = "config.yaml") -> dict:
     default_config = {
         "system": {"name": "InsuranceRAG", "version": "2.0.0",
                     "log_level": "INFO", "log_dir": "./logs"},
-        "document": {"source_dir": "./保司文件"},
+        "document": {"source_dir": "./保司文件2.0"},
         "chunking": {"chunk_size": 800, "chunk_overlap": 100},
         "embedding": {"model": "doubao-embedding-vision", "batch_size": 4},
         "llm": {"model": "doubao-seed-2.0-pro", "temperature": 0.0},
@@ -46,83 +46,6 @@ def load_config(config_path: str = "config.yaml") -> dict:
             print(f"[WARNING] 配置文件加载失败，使用默认配置: {e}")
 
     return default_config
-
-
-def create_sample_pdf(output_dir: str = "./保司文件"):
-    """在目标目录创建示例保险条款 PDF（如果目录为空）"""
-    os.makedirs(output_dir, exist_ok=True)
-
-    existing = [f for f in os.listdir(output_dir)
-                if f.endswith(('.pdf', '.txt'))]
-    if existing:
-        return
-
-    sample_text = """重大疾病保险条款
-
-第一章 总则
-第一条 本保险合同由保险单或其他保险凭证、所附条款、投保单、与本合同有关的投保文件、合法有效的声明、批注、附贴批单及其他书面协议构成。
-
-第二章 保险责任
-第二条 在本合同保险期间内，本公司承担下列保险责任：
-一、重大疾病保险金
-被保险人于本合同生效（或最后一次复效，以较迟者为准）之日起90日内（含第90日），经专科医生确诊初次患有本合同所定义的重大疾病（无论一种或多种），本公司按投保人已交纳的本合同的保险费（不计利息）给付重大疾病保险金，本合同终止。
-被保险人于本合同生效（或最后一次复效，以较迟者为准）之日起90日后，经专科医生确诊初次患有本合同所定义的重大疾病（无论一种或多种），本公司按基本保险金额给付重大疾病保险金，本合同终止。
-
-第三章 责任免除
-第三条 因下列情形之一，导致被保险人发生疾病、达到疾病状态或进行手术的，本公司不承担给付保险金的责任：
-一、投保人对被保险人的故意杀害、故意伤害；
-二、被保险人故意自伤、故意犯罪或抗拒依法采取的刑事强制措施；
-三、被保险人服用、吸食或注射毒品；
-四、被保险人酒后驾驶、无合法有效驾驶证驾驶，或驾驶无有效行驶证的机动车；
-五、被保险人感染艾滋病病毒或患艾滋病；
-六、战争、军事冲突、暴乱或武装叛乱；
-七、核爆炸、核辐射或核污染；
-八、遗传性疾病，先天性畸形、变形或染色体异常。
-
-第四章 保险金额
-第四条 本合同的基本保险金额由投保人与本公司约定并在保险单上载明。
-
-第五章 保险期间
-第五条 本合同的保险期间为终身，自本合同生效日起至被保险人身故时止。
-
-第六章 保险费
-第六条 本合同的保险费交付方式分为趸交、年交、半年交和月交，由投保人在投保时选择。分期交付保险费的，交费期间由投保人与本公司约定并在保险单上载明。
-"""
-    try:
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.pagesizes import letter
-        from reportlab.pdfbase import pdfmetrics
-        from reportlab.pdfbase.ttfonts import TTFont
-
-        output_path = os.path.join(output_dir, "重大疾病保险条款_示例.pdf")
-        c = canvas.Canvas(output_path, pagesize=letter)
-        width, height = letter
-
-        try:
-            pdfmetrics.registerFont(TTFont('SimSun', 'simsun.ttc'))
-            font = 'SimSun'
-        except Exception:
-            font = 'Helvetica'
-
-        c.setFont(font, 10)
-        lines = sample_text.split('\n')
-        y = height - 50
-
-        for line in lines:
-            if y < 50:
-                c.showPage()
-                c.setFont(font, 10)
-                y = height - 50
-            c.drawString(50, y, line[:80])
-            y -= 15
-
-        c.save()
-        print(f"[INFO] 示例文档已生成: {output_path}")
-    except ImportError:
-        output_path = os.path.join(output_dir, "重大疾病保险条款_示例.txt")
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(sample_text)
-        print(f"[INFO] reportlab 未安装，已生成文本版示例: {output_path}")
 
 
 def run_demo(agent: InsuranceRAGAgent):
@@ -207,9 +130,7 @@ def main():
     logger.info("=" * 60)
 
     doc_cfg = config.get("document", {})
-    source_dir = doc_cfg.get("source_dir", "./保司文件")
-
-    create_sample_pdf(source_dir)
+    source_dir = doc_cfg.get("source_dir", "./保司文件2.0")
 
     logger.info("初始化 Agent...")
     try:

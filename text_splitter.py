@@ -53,6 +53,7 @@ class InsuranceTextSplitter:
 
     def __init__(self, chunk_size: int = 800, chunk_overlap: int = 100,
                  min_chunk_size: int = 50,
+                 max_chunk_bytes: int = 80000,
                  separators: List[str] = None,
                  semantic_headings: List[str] = None):
         """
@@ -60,12 +61,14 @@ class InsuranceTextSplitter:
             chunk_size: 分块最大字符数
             chunk_overlap: 分块重叠字符数
             min_chunk_size: 最小分块字符数，小于此值会合并到前一个块
+            max_chunk_bytes: 分块最大字节数（embedding API 限制为 100000 字节）
             separators: 递归分块分隔符
             semantic_headings: 语义分块识别关键词
         """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.min_chunk_size = min_chunk_size
+        self.max_chunk_bytes = max_chunk_bytes
         self.semantic_headings = semantic_headings or ["章", "条", "节", "款"]
 
         self.recursive_splitter = RecursiveCharacterTextSplitter(
@@ -98,10 +101,17 @@ class InsuranceTextSplitter:
             clause_chunks = self._recursive_split(doc.text, doc)
 
         chunks = self._merge_small_chunks(clause_chunks, doc)
+        chunks = self._filter_oversized_chunks(chunks)
         chunks = self._add_page_info(chunks, doc)
         self._assign_chunk_ids(chunks)
 
-        logger.info(f"文档分块完成: {doc.file_name}, 共 {len(chunks)} 个块")
+        # 将文档级别的 company_name 传递到每个 chunk
+        company_name = doc.metadata.get("company_name", "")
+        for chunk in chunks:
+            if company_name:
+                chunk.metadata["company_name"] = company_name
+
+        logger.info(f"文档分块完成: {doc.file_name}, 共 {len(chunks)} 个块, 公司: {company_name}")
         return chunks
 
     def split_documents(self, documents: List[LoadedDocument]) -> List[TextChunk]:
@@ -289,6 +299,26 @@ class InsuranceTextSplitter:
                 merged.extend(buffer)
 
         return merged
+
+    def _filter_oversized_chunks(self, chunks: List[TextChunk]) -> List[TextChunk]:
+        """过滤或截断超过字节限制的分块"""
+        filtered = []
+        for chunk in chunks:
+            byte_len = len(chunk.content.encode('utf-8'))
+            if byte_len > self.max_chunk_bytes:
+                # 按字节截断到限制内，确保不截断 UTF-8 多字节字符
+                content_bytes = chunk.content.encode('utf-8')
+                truncated = content_bytes[:self.max_chunk_bytes].decode('utf-8', errors='ignore')
+                # 截断到最后一个完整句子
+                last_period = max(truncated.rfind('。'), truncated.rfind('！'), truncated.rfind('？'), truncated.rfind('\n'))
+                if last_period > len(truncated) // 2:
+                    truncated = truncated[:last_period + 1]
+                chunk.content = truncated
+                chunk.summary = chunk._generate_summary()
+                chunk.metadata["chunk_summary"] = chunk.summary
+                logger.warning(f"分块过大已截断: {byte_len} -> {len(chunk.content.encode('utf-8'))} 字节")
+            filtered.append(chunk)
+        return filtered
 
     def _add_page_info(self, chunks: List[TextChunk],
                        doc: LoadedDocument) -> List[TextChunk]:

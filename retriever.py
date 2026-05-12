@@ -89,15 +89,23 @@ class InsuranceRetriever:
         """
         all_results: Dict[str, SearchResult] = {}
 
+        # 从查询中识别公司名
+        company_name = enhanced_query.entities.get("company_name")
+        if company_name:
+            logger.info(f"检测到公司名过滤: {company_name}")
+
         search_queries = enhanced_query.expanded_queries[:2]
 
         for query in search_queries:
             query_embedding = self.embedding_provider.embed_single(query)
+            # 不在 ChromaDB 层做公司过滤，改为在 Python 层后过滤（更可靠）
             semantic_results = self.vector_store.search(
                 query_embedding, top_k=self.top_k * 2,
-                filter_metadata=filter_metadata,
             )
             for r in semantic_results:
+                # Python 层公司过滤
+                if company_name and r.metadata.get("company_name") != company_name:
+                    continue
                 key = r.id or r.content[:50]
                 if key not in all_results or r.score > all_results[key].score:
                     all_results[key] = r
@@ -105,6 +113,9 @@ class InsuranceRetriever:
             if self._bm25_index:
                 keyword_results = self._keyword_search(query, top_k=self.top_k)
                 for r in keyword_results:
+                    if company_name and r.metadata.get("company_name") != company_name:
+                        continue
+
                     key = r.id or r.content[:50]
                     if key in all_results:
                         all_results[key].score = (

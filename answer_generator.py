@@ -30,7 +30,7 @@ class AnswerGenerator:
     严格基于检索结果生成答案，附带原文引用和来源标注
     """
 
-    CITATION_TEMPLATE = "【来源：{file_name} 第{page}页 {chapter}{section}】"
+    CITATION_TEMPLATE = "【来源：{company_name} | {file_name} 第{page}页 {chapter}{section}】"
 
     SYSTEM_PROMPT = """你是一名专业的保险条款咨询专家。你必须严格按照以下规则回答问题：
 
@@ -39,7 +39,7 @@ class AnswerGenerator:
 2. 文档内容可能与用户提问使用不同表述（如繁体/简体差异、同义词、上下位词），只要文档内容与问题主题相关，就应当总结并回答
 3. 如果用户问题提到某公司（如友邦、保诚、宏利等），而文档内容涉及同类保险产品或投保流程，即使未直接出现该公司名称，也应基于文档内容提供相关信息
 4. 如果文档内容确实与问题完全无关，才告知"根据现有文档，未找到相关信息"
-5. 每条关键信息必须附带来源引用，格式为：【来源：文件名 第X页 章节名】
+5. 每条关键信息必须附带来源引用，格式为：【来源：公司名 | 文件名 第X页 章节名】
 6. 引用时优先使用原文表述，必要时可将繁体转简体以便阅读
 
 【回答格式要求】
@@ -155,13 +155,28 @@ class AnswerGenerator:
         """构建 LLM 上下文"""
         parts = []
         for i, r in enumerate(results):
-            source = r.metadata.get("file_name", "未知文档")
+            file_name = r.metadata.get("file_name", "未知文档")
+            source = r.metadata.get("source", "")
+            company = r.metadata.get("company_name", "")
             page = r.metadata.get("page_number", "N/A")
             chapter = r.metadata.get("chapter", "")
             section = r.metadata.get("section", "")
 
+            # 拼接可读的文档路径：公司名 / 相对路径
+            display_path = file_name
+            if company:
+                display_path = f"{company}/{file_name}"
+            elif source:
+                # 尝试从完整路径中提取 保司文件2.0 之后的部分
+                import re
+                m = re.search(r'保司文件2\.0[/\\](.+?)(?:[/\\][^/\\]+\.md)?$', source)
+                if m:
+                    display_path = m.group(1).replace('\\', '/')
+                else:
+                    display_path = source.replace('\\', '/')
+
             header = f"[文档片段 {i + 1}]"
-            header += f" 文件: {source}"
+            header += f" 文件: {display_path}"
             if page:
                 header += f" | 第{page}页"
             if chapter:
@@ -178,7 +193,9 @@ class AnswerGenerator:
         citations = []
         for r in results:
             citations.append({
+                "company_name": r.metadata.get("company_name", ""),
                 "file_name": r.metadata.get("file_name", "未知文档"),
+                "source": r.metadata.get("source", ""),
                 "page": str(r.metadata.get("page_number", "N/A")),
                 "chapter": r.metadata.get("chapter", ""),
                 "section": r.metadata.get("section", ""),
@@ -194,7 +211,8 @@ class AnswerGenerator:
 
         parts = ["根据保险文档查询结果：\n"]
         for i, r in enumerate(results[:5]):
-            source = r.metadata.get("file_name", "未知文档")
+            file_name = r.metadata.get("file_name", "未知文档")
+            company = r.metadata.get("company_name", "")
             page = r.metadata.get("page_number", "")
             chapter = r.metadata.get("chapter", "")
 
@@ -202,8 +220,8 @@ class AnswerGenerator:
             parts.append(r.content[:300])
             if page:
                 parts.append(self.CITATION_TEMPLATE.format(
-                    file_name=source, page=page,
-                    chapter=chapter, section=""
+                    company_name=company, file_name=file_name,
+                    page=page, chapter=chapter, section=""
                 ))
             parts.append("")
 

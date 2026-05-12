@@ -310,7 +310,10 @@ class InsuranceRAGAgent:
         if force_reload:
             stats = self.vector_store.get_collection_stats()
             logger.info(f"强制重建索引，当前文档数: {stats.get('document_count', 0)}")
-            self.vector_store.delete_by_filter({})
+            # 删除整个集合并重建，避免 delete_by_filter({}) 的空字典问题
+            collection_name = self.config.get("vector_store", {}).get("collection_name", "insurance_knowledge")
+            self.vector_store.delete_collection(collection_name)
+            self.vector_store.create_collection(collection_name)
 
         documents = self.document_loader.load_all()
         if not documents:
