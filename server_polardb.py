@@ -110,7 +110,7 @@ class SearchHandler(BaseHTTPRequestHandler):
                 "table_caption": cap or "",
                 "has_table": has_tbl or False,
                 "score": round(float(sim), 4),
-                "text": content[:500],
+                "text": content,
             })
 
         self.send_response(200)
