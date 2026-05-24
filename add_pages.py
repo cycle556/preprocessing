@@ -2,7 +2,7 @@
 """
 页码回标脚本 —— 将 chunk JSONL 中的每个 chunk 映射回原始 PDF 的页码。
 
-描述（Agentic RAG）：
+设计理念（Agentic RAG）：
     页码不需要精确到行。Agent 只需要知道 chunk 大概在 PDF 的第几页，
     就能在需要引证时定位原文。因此本脚本追求高覆盖率（>90% chunk 有页码），
     而非精确的页码边界。

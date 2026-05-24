@@ -1,13 +1,19 @@
-*.pyc
-__pycache__/
-*.pyo
-*.pyd
-/保司文件/
-/session_data/
+# 数据
+output/
+*.pdf
+*.md
+
+# 环境
 .env
-/chroma_db/
-/logs/
-/conversation_data/
-/index_tracking/
-/保司文件2.0/
-test_results.txt
+__pycache__/
+*.pyc
+
+# 数据库
+chroma_db/
+*.db
+
+# 模型
+models/
+
+# 测试
+安盛1/
